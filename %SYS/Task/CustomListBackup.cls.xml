@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+<Class name="%SYS.Task.CustomListBackup">
+<Description>
+Класс задачи резервного копирования</Description>
+<IncludeCode>%occKeyword</IncludeCode>
+<Modified>0</Modified>
+<Super>%SYS.Task.Definition</Super>
+<TimeCreated>64539,39310.455415</TimeCreated>
+<LegacyInstanceContext>1</LegacyInstanceContext>
+
+<Property name="AllDatabases">
+<Description>
+Если ..AllDatabases=1, то в копию включать все базы данных ..PrefixIncludeDB и ..IncludeDatabases - игнорируются</Description>
+<Type>%Integer</Type>
+<InitialExpression>0</InitialExpression>
+</Property>
+
+<Property name="IgnoreForAllDatabases">
+<Description>
+Если ..AllDatabases=1, то в копию включать все базы данных , исключая из ..IgnoreForAllDatabases через запятую</Description>
+<Type>%String</Type>
+<InitialExpression>"При AllDatabases=0 не применяется "</InitialExpression>
+<Parameter name="MAXLEN" value="32000"/>
+</Property>
+
+<Property name="IgnoreTempDatabases">
+<Description>
+Если ..IgnoreTempDatabases=1, то исключать временные базы</Description>
+<Type>%Integer</Type>
+<InitialExpression>1</InitialExpression>
+</Property>
+
+<Property name="IgnorePreparedDatabases">
+<Description>
+Если ..IgnorePreparedDatabases=1, то исключать предустановленные базы</Description>
+<Type>%Integer</Type>
+<InitialExpression>1</InitialExpression>
+</Property>
+
+<Property name="PrefixIncludeDB">
+<Description>
+Если ..AllDatabases=0 и если PrefixIncludeDB не пустое, то будем бэкапить все бд, имена которых начинаются на ..PrefixIncludeDB</Description>
+<Type>%String</Type>
+<SqlComputeCode>S {*}=..ListNS()</SqlComputeCode>
+<SqlComputed>1</SqlComputed>
+</Property>
+
+<Property name="IncludeDatabases">
+<Description>
+Если ..AllDatabases=0, то в копию включать все базы данных из ..IncludeDatabases , через запятую</Description>
+<Type>%String</Type>
+<InitialExpression>"При AllDatabases=1 не применяется "_..ListDB()</InitialExpression>
+<Parameter name="MAXLEN" value="32000"/>
+</Property>
+
+<Parameter name="TaskName">
+<Description>
+Имя задачи в общем списке</Description>
+<Default>CustomListBackup</Default>
+</Parameter>
+
+<Property name="DirBackup">
+<Description>
+Путь, где хранить бэкапы</Description>
+<Type>%String</Type>
+<InitialExpression>##class(%File).NormalizeDirectory("Backup")</InitialExpression>
+<Parameter name="MAXLEN" value="1024"/>
+</Property>
+
+<Property name="DirBackupLog">
+<Description>
+Путь, куда писать протокол</Description>
+<Type>%String</Type>
+<InitialExpression>##class(%File).NormalizeDirectory("Backup")</InitialExpression>
+<Parameter name="MAXLEN" value="1024"/>
+</Property>
+
+<Property name="TypeBackup">
+<Description>
+Тип копии (Full-Полный, Incremental-Инкрементальный, Cumulative-Комулятивный)</Description>
+<Type>%String</Type>
+<InitialExpression>"Full"</InitialExpression>
+<SqlColumnNumber>4</SqlColumnNumber>
+<Parameter name="DISPLAYLIST" value=",Full,Incremental,Cumulative"/>
+<Parameter name="VALUELIST" value=",Full,Inc,Cum"/>
+</Property>
+
+<Property name="PrefixBackUpFile">
+<Description>
+Префикс имени файла бэкапа</Description>
+<Type>%String</Type>
+<InitialExpression>"back"</InitialExpression>
+</Property>
+
+<Property name="MaxBackUpFiles">
+<Description>
+Максимальное количество файлов бэкап, самые старые удалять</Description>
+<Type>%Integer</Type>
+<InitialExpression>3</InitialExpression>
+</Property>
+
+<Method name="DeviceIsValid">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>Directory:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ 
+	If '##class(%Library.File).DirectoryExists(Directory) quit $$$ERROR($$$GeneralError,"Directory does not exist")
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="CheckBackup">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>Device,MaxBackUpFiles,del=0</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ 
+	set path=##class(%File).NormalizeFilename(Device)
+	quit:'##class(%File).DirectoryExists(path) $$$ERROR($$$GeneralError,"Директория "_path_" не существует") 
+	set max=MaxBackUpFiles
+	set result=##class(%ResultSet).%New("%File:FileSet")
+	set st=result.Execute(path,"*.cbk",,1)
+	while result.Next()
+	{	If result.GetData(2)="F"	{
+			continue:result.GetData(3)=0
+			set ts=$tr(result.GetData(4),"-: ")
+			set ts(ts)=$lb(result.GetData(1),result.GetData(3))			
+		}
+	}
+	#; Обойдем все файлы начиная с самого нового
+	set i="" for count=1:1 { set i=$order(ts(i),-1) quit:i=""
+		#; Получаем прирост в байтах как разницу размера от предыдущего бэкап
+		if $data(size),'$data(delta) set delta=size-$lg(ts(i),2)
+		#; Получим размер в байтах самого свежего файла бэкап
+		if '$data(size) set size=$lg(ts(i),2)
+		#; Если количество файлов бэкап больше или равно максимального, то удаляем самые старые вместе с логами
+		if count'<max {
+			set cbk=$lg(ts(i),1)
+			set log=$replace($lg(ts(i),1),".cbk",".log")
+			if del { if ##CLASS(%File).Delete(cbk)
+					if ##CLASS(%File).Delete(log)
+			}
+		}
+	}
+	do result.%Close()
+	If $$$isUNIX quit $$$OK ##; Для линух не считаем	
+	#; Высчитаем количество байт свободного места на диске
+	set drive=$e(path,1)
+	do ##CLASS(%File).GetDirectorySpace(drive_":/",.free,.total,0)
+	#; Возращаем ошибку если прогнозируемый размер нового бэкап больше чем свободное место
+	quit:($g(size)+$g(delta))>$g(free) $$$ERROR($$$GeneralError,"Прогнозируемый размер нового файла бэкап больше, чем свободное место на диске:("_$g(size)_"+"_$g(delta)_")>"_$g(free)) 
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="OnTask">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ 
+	do $zu(5,"%SYS")
+	set list=""
+	merge oldDBList=^SYS("BACKUPDB")
+	kill ^SYS("BACKUPDB")
+	#; Добавление новых свойств для задание запуска бэкап
+	set status=$$$OK
+	try {
+		##; Проврка на количество копий бд, если нужно то удалить самую старую
+		##; Проверка на оставшийся объем на диске и прогнозируемый размер нового файла
+		set status=..CheckBackup(..DirBackup,..MaxBackUpFiles,1)
+		quit:$$$ISERR(status)
+		#; Все базы данных
+		if ..AllDatabases {
+			set vals=""
+			set disp=""
+			set rss=##class(%ResultSet).%New("Config.Databases:List")
+			do rss.Execute()
+			while rss.Next(.sc) { 
+				if ..IgnoreForAllDatabases'="",(","_..IgnoreForAllDatabases_",")[(","_$zconvert(rss.Data("Name"),"U")_",") continue
+				if ..IgnoreTempDatabases continue:..IsTempDB(rss.Data("Name"))
+				if ..IgnorePreparedDatabases continue:..IsPreparedDB(rss.Data("Name"))
+				set ^SYS("BACKUPDB",rss.Data("Name"))=""
+			}
+		}
+		else {
+			#; если свойство PrefixIncludeDB не пустое, то будем бэкапить все бд имена которых начинаются на ..PrefixIncludeDB
+			if ..PrefixIncludeDB'="" {
+					set rss=##class(%ResultSet).%New("Config.Databases:List")
+					do rss.Execute(..PrefixIncludeDB_"*")
+					while rss.Next(.sc) { 
+						if ..IgnoreTempDatabases continue:..IsTempDB(rss.Data("Name"))
+						set ^SYS("BACKUPDB",rss.Data("Name"))=""
+					}
+			}
+			#; Включим в список конкретные бд
+			if ..IncludeDatabases'="" {
+				set rss=##class(%ResultSet).%New("Config.Databases:List")
+				do rss.Execute("*")
+				while rss.Next(.sc) { 
+					if ..IgnoreTempDatabases continue:..IsTempDB(rss.Data("Name"))
+					if (","_..IncludeDatabases_",")'[(","_$zconvert(rss.Data("Name"),"U")_",") continue
+					set ^SYS("BACKUPDB",rss.Data("Name"))=""
+				}
+			}
+		}
+		do ..GetFileName(.backFile,.logFile)
+		set typeB=$zconvert($e(..TypeBackup,1),"U")
+		set:"FIC"'[typeB typeB="F"
+		set res=$$BACKUP^DBACK("",typeB,"",backFile,"Y",logFile,"NOINPUT","Y","Y","","","")
+		if 'res set status=$$$ERROR($$$GeneralError,"Ошибка: "_res)
+	} catch {	set status=$$$ERROR($$$GeneralError,"Ошибка: "_$ze) 
+				set $ze=""
+	  }
+	kill ^SYS("BACKUPDB")
+	merge ^SYS("BACKUPDB")=oldDBList
+	quit status
+]]></Implementation>
+</Method>
+
+<Method name="GetFileName">
+<Description>
+Получить имена файлов</Description>
+<FormalSpec><![CDATA[aBackupFile,&aLogFile]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ 
+	set tmpName=..PrefixBackUpFile_"_"_..TypeBackup_"_"_$s(..AllDatabases:"All",1:"List")_"_"_$zd($h,8)_$tr($j($i(cnt),3)," ",0)
+	do {
+		s aBackupFile=##class(%File).NormalizeFilename(..DirBackup_"/"_tmpName_".cbk")
+	} while ##class(%File).Exists(aBackupFile)
+	set aLogFile=##class(%File).NormalizeFilename(..DirBackupLog_"/"_tmpName_".log")
+	quit 1
+]]></Implementation>
+</Method>
+
+<Method name="IsPreparedDB">
+<Description>
+Проверить предустановленная ли база данных</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>name</FormalSpec>
+<Implementation><![CDATA[
+ 
+	if (",ENSDEMO,ENSEMBLE,ENSEMBLEENSTEMP,ENSEMBLESECONDARY,ENSLIB,CACHESYS,CACHELIB,CACHETEMP,CACHE,CACHEAUDIT,DOCBOOK,USER,SAMPLES,")[(","_$zconvert(name,"U")_",") quit 1
+	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="IsTempDB">
+<Description>
+Проверить временная ли база данных</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>name</FormalSpec>
+<Implementation><![CDATA[
+ 
+	quit:$zconvert(name,"U")["TEMP" 1
+	quit:$zconvert(name,"U")["SECONDARY" 1
+	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="ListDB">
+<Description>
+Получить список имен баз данных через запятую</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ 
+	set list=""
+	set rss=##class(%ResultSet).%New("Config.Databases:List")
+	do rss.Execute()
+	while rss.Next(.sc) { 
+		set list=list_","_rss.Data("Name") 
+	}
+	quit list
+]]></Implementation>
+</Method>
+
+<Method name="ListNS">
+<ClassMethod>1</ClassMethod>
+<Private>1</Private>
+<Implementation><![CDATA[
+ 
+	set disp=""
+	set tRS = ##class(%ResultSet).%New("Config.Namespaces:List")
+	set tSC = tRS.Execute()
+	While tRS.Next() {	
+				set disp=disp_","_tRS.GetData(1)
+	}
+	set %class=..%ClassName(1)
+	$$$comSubMemberSet(%class,$$$cCLASSproperty,"PrefixIncludeDB",$$$cPROPparameter,"VALUELIST",disp)
+	quit ""
+]]></Implementation>
+</Method>
+
+<Method name="oncompile">
+<ClassMethod>1</ClassMethod>
+<CodeMode>generator</CodeMode>
+<Implementation><![CDATA[
+ 
+	$$$defMemberKeySet(%class,$$$cCLASSproperty,"PrefixIncludeDB",$$$cPROPtype,"%String")
+	set updateClass=##class("%Dictionary.ClassDefinition").%OpenId(%class)
+	set updateClass.Modified=0
+	do updateClass.%Save()
+	do updateClass.%Close()
+]]></Implementation>
+</Method>
+</Class>
+</Export>

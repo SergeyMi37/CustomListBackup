@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+<Routine name="%ZSTART" type="MAC" languagemode="0"><![CDATA[
+%ZSTART ; старт
+	quit
+SYSTEM
+	;восстановим предпочтения пользователей из неубиваемого глобала
+	if $data(^tmpMgtPortalSettings) merge ^CacheTemp.MgtPortalSettings=^tmpMgtPortalSettings
+	quit
+   
+]]></Routine>
+</Export>
