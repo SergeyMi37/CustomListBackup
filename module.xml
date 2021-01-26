@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+<Document name="zapm.ZPM">
+<Module>
+ <Name>zapm</Name>
+  <Version>1.0.2</Version>
+  <Description>Zapm is a shell - extends the zpm shell and adds any other commands.</Description>
+  <Packaging>module</Packaging>
+  <SourcesRoot>./</SourcesRoot>
+	<Invokes>
+    </Invoke>
+	<Invoke Class="%ZAPM.ext.zapp" Method="init"></Invoke>
+	</Invokes>
+  <Resource Name="zapm.PKG"/> 
+  <Resource Name="%ZAPM.ext.Common.INC" Directory="inc"/>
+  <Resource Name="%ZAPM.ext.PKG" Directory="cls"/>
+  <Resource Name="%ZAPM.ext.commands.CLS" Directory="cls"/>
+  <Resource Name="%ZAPM.ext.database.CLS" Directory="cls"/>
+  <Resource Name="%ZAPM.ext.zapp.CLS" Directory="cls"/>
+  <Resource Name="%ZAPM.ext.zpm.CLS" Directory="cls"/>
+</Module>
+</Document>
+</Export>
